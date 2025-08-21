@@ -7,9 +7,9 @@ const SPLUS_URL = "https://splus.ir/Tozie_Barq_Nikshahar_ir";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-// --- تابع اصلی (فقط برای استخراج متن خام) ---
-async function getRawAnnouncementText() {
-  console.log("شروع فرآیند وب‌گردی برای دریافت متن خام...");
+// --- تابع اصلی (فقط برای استخراج متن خام و کامل اطلاعیه) ---
+async function getUnfilteredAnnouncementText() {
+  console.log("شروع فرآیند وب‌گردی برای دریافت متن خام اطلاعیه...");
   
   let browser;
   try {
@@ -37,15 +37,14 @@ async function getRawAnnouncementText() {
 
     const messages = Array.from(messagesNodeList).reverse();
     let latestAnnouncementContent = "";
-    let finalDate = "";
     let foundStartOfAnnouncement = false;
     const startPostRegex = /برنامه خاموشی.*(\d{4}\/\d{2}\/\d{2})/;
 
+    // پیدا کردن بلوک کامل متن اطلاعیه
     for (const msg of messages) {
         msg.innerHTML = msg.innerHTML.replace(/<br\s*\/?>/gi, '\n');
         const currentText = msg.textContent.trim();
         if (startPostRegex.test(currentText)) {
-            finalDate = currentText.match(startPostRegex)[1];
             latestAnnouncementContent = currentText;
             let nextMsgIndex = messages.indexOf(msg) + 1;
             while (nextMsgIndex < messages.length && !startPostRegex.test(messages[nextMsgIndex].textContent.trim())) {
@@ -59,20 +58,11 @@ async function getRawAnnouncementText() {
     }
 
     if (!foundStartOfAnnouncement) {
-      return "اطلاعیه خاموشی پیدا نشد. (اشکالی ندارد، ممکن است امروز اطلاعیه‌ای نباشد)";
+      return "اطلاعیه خاموشی پیدا نشد. (ممکن است امروز اطلاعیه‌ای نباشد)";
     }
-
-    // *** بخش کلیدی: ساخت پیام دیباگ ***
-    const debugMessage = `
---- [اطلاعات خام برای دیباگ] ---
-لطفاً این متن را به طور کامل کپی کرده و برای توسعه‌دهنده ارسال کنید.
-
-[شروع اطلاعات]
-${latestAnnouncementContent}
-[پایان اطلاعات]
-`;
     
-    return debugMessage;
+    // ارسال متن کامل و دست‌نخورده
+    return latestAnnouncementContent;
 
   } catch (error) {
     console.error("خطا در فرآیند وب‌گردی:", error);
@@ -90,18 +80,18 @@ async function main() {
     process.exit(1);
   }
 
-  const message = await getRawAnnouncementText();
-  console.log("\n✅ --- پیام دیباگ آماده شد --- ✅\n");
+  const message = await getUnfilteredAnnouncementText();
+  console.log("\n✅ --- متن خام اطلاعیه آماده شد --- ✅\n");
   console.log(message);
   
   const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
   try {
-    console.log("\n🚀 در حال ارسال پیام دیباگ به تلگرام...");
+    console.log("\n🚀 در حال ارسال متن خام به تلگرام...");
     await axios.post(telegramApiUrl, { 
       chat_id: TELEGRAM_CHAT_ID, 
       text: message 
     }, { timeout: 10000 });
-    console.log("✅ پیام دیباگ با موفقیت به تلگرام ارسال شد.");
+    console.log("✅ متن خام با موفقیت به تلگرام ارسال شد.");
   } catch (error) {
     console.error("❌ خطا در ارسال پیام به تلگرام:", error.response?.data || error.message);
     process.exit(1);
