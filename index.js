@@ -7,9 +7,9 @@ const SPLUS_URL = "https://splus.ir/Tozie_Barq_Nikshahar_ir";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-// --- تابع اصلی وب‌گردی و تحلیل ---
+// --- تابع اصلی ---
 async function checkPowerOutage() {
-  console.log("شروع فرآیند وب‌گردی با منطق نهایی و فیلترها...");
+  console.log("شروع فرآیند وب‌گردی با منطق نهایی فیلترها...");
   
   let browser;
   try {
@@ -35,7 +35,6 @@ async function checkPowerOutage() {
       return "خطای غیرمنتظره: هیچ پیامی در صفحه پیدا نشد.";
     }
 
-    // --- ۱. پیدا کردن بلوک کامل آخرین اطلاعیه (بر اساس منطق صحیح شما) ---
     const startPostRegex = /برنامه خاموشی.*(\d{4}\/\d{2}\/\d{2})/;
     let latestAnnouncementStartIndex = -1;
     let finalDate = "";
@@ -65,7 +64,7 @@ async function checkPowerOutage() {
     }
     const latestAnnouncementContent = announcementPosts.join("\n\n");
 
-    // --- ۲. تحلیل متن خام و فیلتر کردن اطلاعات مورد نیاز ---
+    // --- منطق جدید و دقیق برای تحلیل متن بر اساس مثال‌های شما ---
     console.log("اطلاعیه خام پیدا شد. در حال تحلیل و فیلتر کردن...");
     const targetAreas = [
       { searchKeyword: "خیرآباد", customName: "کهورکان", times: [] },
@@ -75,24 +74,37 @@ async function checkPowerOutage() {
 
     const lines = latestAnnouncementContent.split('\n').map(line => line.trim()).filter(line => line);
     
-    let currentArea = null;
+    lines.forEach((line, i) => {
+      // ۱. بررسی می‌کنیم آیا خط فعلی، تعریف یکی از گروه‌های ماست؟
+      const areaInThisLine = targetAreas.find(area => line.includes(area.searchKeyword));
 
-    lines.forEach(line => {
-      const foundArea = targetAreas.find(area => line.includes(area.searchKeyword));
-      if (foundArea) {
-        currentArea = foundArea;
-      }
+      if (areaInThisLine) {
+        // ۲. اگر بود، شروع به خواندن خطوط بعدی می‌کنیم
+        // ما یک محدوده جستجو (مثلاً ۱۰ خط بعدی) در نظر می‌گیریم
+        for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
+          const nextLine = lines[j];
 
-      const timeMatch = line.match(/(\d{2}:\d{2}\s*تا\s*\d{2}:\d{2})/);
-      if (timeMatch && currentArea) {
-        const timeStr = timeMatch[1].trim();
-        if (!currentArea.times.includes(timeStr)) {
-          currentArea.times.push(timeStr);
+          // ۳. آیا خط بعدی، تعریف یک گروه دیگر است؟
+          // اگر بله، یعنی بخش مربوط به گروه فعلی تمام شده است.
+          const isNextLineAnotherArea = targetAreas.some(area => nextLine.includes(area.searchKeyword));
+          if (isNextLineAnotherArea) {
+            break; // جستجو برای این گروه را متوقف کن
+          }
+
+          // ۴. آیا خط بعدی شامل زمان خاموشی است؟
+          const timeMatch = nextLine.match(/(\d{2}:\d{2}\s*تا\s*\d{2}:\d{2})/);
+          if (timeMatch && timeMatch[1]) {
+            // اگر بله، آن را به گروهی که در خط اصلی پیدا کردیم اضافه کن.
+            const timeStr = timeMatch[1].trim();
+            if (!areaInThisLine.times.includes(timeStr)) {
+              areaInThisLine.times.push(timeStr);
+            }
+          }
         }
       }
     });
 
-    // --- ۳. ساخت پیام نهایی و تمیز ---
+    // --- ساخت پیام نهایی (بدون تغییر) ---
     const newHeader = `💡 گزارش برنامه خاموشی برای تاریخ: ${finalDate} 💡`;
     let messageBody = "";
     let foundAnyResults = false;
@@ -120,7 +132,7 @@ async function checkPowerOutage() {
 
   } catch (error) {
     console.error("خطا در فرآیند وب‌گردی:", error);
-    return "متاسفانه در دریافت اطلاعات مشکلی پیش آمد. جزئیات خطا در لاگ GitHub Actions ثبت شد.";
+    return "متاسفانه در دریافت اطلاعات مشکلی پیش آمد.";
   } finally {
     if (browser) await browser.close();
     console.log("فرآیند وب‌گردی تمام شد.");
