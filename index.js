@@ -7,9 +7,9 @@ const SPLUS_URL = "https://splus.ir/Tozie_Barq_Nikshahar_ir";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-// --- تابع اصلی وب‌گردی ---
-async function checkPowerOutage() {
-  console.log("شروع فرآیند وب‌گردی...");
+// --- تابع اصلی (فقط برای استخراج متن خام) ---
+async function getRawAnnouncementText() {
+  console.log("شروع فرآیند وب‌گردی برای دریافت متن خام...");
   
   let browser;
   try {
@@ -32,7 +32,7 @@ async function checkPowerOutage() {
     const messagesNodeList = dom.window.document.querySelectorAll('div.channel-message-text');
 
     if (messagesNodeList.length === 0) {
-      return "خطای غیرمنتظره: پیام‌ها پس از انتظار یافت نشدند.";
+      return "خطا: هیچ پیامی در صفحه پیدا نشد.";
     }
 
     const messages = Array.from(messagesNodeList).reverse();
@@ -59,101 +59,49 @@ async function checkPowerOutage() {
     }
 
     if (!foundStartOfAnnouncement) {
-      return "پیام‌های کانال با موفقیت خوانده شد، اما هیچ پست اطلاعیه خاموشی جدیدی در بین آن‌ها پیدا نشد.";
+      return "اطلاعیه خاموشی پیدا نشد. (اشکالی ندارد، ممکن است امروز اطلاعیه‌ای نباشد)";
     }
 
-    const targetAreas = [
-      { searchKeyword: "خیرآباد", customName: "کهورکان", times: [] },
-      { searchKeyword: "زیرک آباد", customName: "زیرک آباد", times: [] },
-    ];
-    // برای اطمینان، لیست زمان‌ها را قبل از هر اجرا خالی می‌کنیم
-    targetAreas.forEach(area => area.times = []);
+    // *** بخش کلیدی: ساخت پیام دیباگ ***
+    const debugMessage = `
+--- [اطلاعات خام برای دیباگ] ---
+لطفاً این متن را به طور کامل کپی کرده و برای توسعه‌دهنده ارسال کنید.
 
-    const lines = latestAnnouncementContent.split('\n').map(line => line.trim()).filter(line => line);
+[شروع اطلاعات]
+${latestAnnouncementContent}
+[پایان اطلاعات]
+`;
     
-    // *** منطق جدید و نهایی برای استخراج اطلاعات ***
-    lines.forEach((line, i) => {
-      // بررسی می‌کنیم که آیا خط فعلی، نام یکی از روستاهای ماست؟
-      const areaInThisLine = targetAreas.find(area => line.includes(area.searchKeyword));
-
-      if (areaInThisLine) {
-        // اگر بود، شروع به خواندن خطوط بعدی می‌کنیم
-        for (let j = i + 1; j < lines.length; j++) {
-          const nextLine = lines[j];
-
-          // آیا خط بعدی، نام یک روستای دیگر است؟
-          const isNextLineAnotherArea = targetAreas.some(area => nextLine.includes(area.searchKeyword));
-          if (isNextLineAnotherArea) {
-            // اگر بله، یعنی بخش مربوط به روستای فعلی تمام شده. حلقه را بشکن.
-            break;
-          }
-
-          // آیا خط بعدی شامل زمان خاموشی است؟
-          const timeMatch = nextLine.match(/(\d{2}:\d{2}\s*تا\s*\d{2}:\d{2})/);
-          if (timeMatch && timeMatch[1]) {
-            // اگر بله، آن را به روستای فعلی (areaInThisLine) اضافه کن.
-            const timeStr = timeMatch[1].trim();
-            if (!areaInThisLine.times.includes(timeStr)) {
-              areaInThisLine.times.push(timeStr);
-            }
-          }
-        }
-      }
-    });
-
-    const newHeader = `💡 گزارش برنامه خاموشی برای تاریخ: ${finalDate} 💡`;
-    let messageBody = "";
-    let foundAnyResults = false;
-    const turnLabels = ["نوبت اول", "نوبت دوم", "نوبت سوم", "نوبت چهارم", "نوبت پنجم"];
-    targetAreas.forEach(area => {
-        if (area.times.length > 0) {
-            foundAnyResults = true;
-            messageBody += `\n📍 روستای ${area.customName}:\n`;
-            const sortedTimes = area.times.sort();
-            sortedTimes.forEach((time, index) => {
-                const label = turnLabels[index] || `نوبت ${index + 1}`;
-                messageBody += `${label}: از ساعت ${time.replace("تا", "تا ساعت")}\n`;
-            });
-        }
-    });
-
-    let finalMessage = newHeader + "\n";
-    if (foundAnyResults) {
-      finalMessage += messageBody;
-    } else {
-      const areaNames = targetAreas.map(a => `"${a.customName}"`).join(' و ');
-      finalMessage += `\nبرای مناطق مشخص شده شما (${areaNames})، برنامه‌ای یافت نشد.`;
-    }
-    return finalMessage.trim();
+    return debugMessage;
 
   } catch (error) {
     console.error("خطا در فرآیند وب‌گردی:", error);
-    return "متاسفانه در دریافت اطلاعات مشکلی پیش آمد. جزئیات خطا در لاگ GitHub Actions ثبت شد.";
+    return `متاسفانه در دریافت اطلاعات مشکلی پیش آمد: ${error.message}`;
   } finally {
     if (browser) await browser.close();
     console.log("فرآیند وب‌گردی تمام شد.");
   }
 }
 
-// --- اجرای اصلی برنامه (بدون تغییر) ---
+// --- اجرای اصلی برنامه ---
 async function main() {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-    console.error("خطا: توکن ربات یا آیدی چت در سکرت‌های گیت‌هاب تعریف نشده است!");
+    console.error("خطا: توکن ربات یا آیدی چت در سکرت‌های گیت‌האב تعریف نشده است!");
     process.exit(1);
   }
 
-  const message = await checkPowerOutage();
-  console.log("\n✅ --- پیام نهایی آماده شد --- ✅\n");
+  const message = await getRawAnnouncementText();
+  console.log("\n✅ --- پیام دیباگ آماده شد --- ✅\n");
   console.log(message);
   
   const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
   try {
-    console.log("\n🚀 در حال ارسال پیام به تلگرام...");
+    console.log("\n🚀 در حال ارسال پیام دیباگ به تلگرام...");
     await axios.post(telegramApiUrl, { 
       chat_id: TELEGRAM_CHAT_ID, 
       text: message 
     }, { timeout: 10000 });
-    console.log("✅ پیام با موفقیت به تلگرام ارسال شد.");
+    console.log("✅ پیام دیباگ با موفقیت به تلگرام ارسال شد.");
   } catch (error) {
     console.error("❌ خطا در ارسال پیام به تلگرام:", error.response?.data || error.message);
     process.exit(1);
