@@ -1,0 +1,16 @@
+{
+  "name": "bargh-bot",
+  "version": "1.0.0",
+  "description": "A bot to check power outages.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "jsdom": "^24.0.0",
+    "puppeteer": "^22.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
