@@ -1,16 +1,16 @@
 {
-  "name": "bargh-bot",
+  "name": "telegram-bargh-bot",
   "version": "1.0.0",
-  "description": "A bot to check power outages.",
+  "description": "A Telegram bot that scrapes power outage info on command.",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "jsdom": "^24.0.0",
-    "puppeteer": "^22.0.0"
-  },
-  "engines": {
-    "node": ">=18"
+    "express": "^4.19.2",
+    "jsdom": "^24.1.0",
+    "node-telegram-bot-api": "^0.66.0",
+    "puppeteer": "^22.10.0"
   }
 }
