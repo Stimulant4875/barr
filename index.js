@@ -66,28 +66,37 @@ async function checkPowerOutage() {
       { searchKeyword: "خیرآباد", customName: "کهورکان", times: [] },
       { searchKeyword: "زیرک آباد", customName: "زیرک آباد", times: [] },
     ];
+    // برای اطمینان، لیست زمان‌ها را قبل از هر اجرا خالی می‌کنیم
+    targetAreas.forEach(area => area.times = []);
+
     const lines = latestAnnouncementContent.split('\n').map(line => line.trim()).filter(line => line);
     
-    // *** بخش کلیدی و بازنویسی شده منطق ***
-    let currentArea = null; // متغیر برای نگهداری روستای فعلی
+    // *** منطق جدید و نهایی برای استخراج اطلاعات ***
+    lines.forEach((line, i) => {
+      // بررسی می‌کنیم که آیا خط فعلی، نام یکی از روستاهای ماست؟
+      const areaInThisLine = targetAreas.find(area => line.includes(area.searchKeyword));
 
-    lines.forEach(line => {
-      // ۱. بررسی می‌کنیم آیا این خط مربوط به یک روستای جدید است یا نه
-      const foundArea = targetAreas.find(area => line.includes(area.searchKeyword));
-      if (foundArea) {
-        // اگر اسم روستا پیدا شد، آن را به عنوان روستای فعلی انتخاب می‌کنیم
-        currentArea = foundArea;
-      }
+      if (areaInThisLine) {
+        // اگر بود، شروع به خواندن خطوط بعدی می‌کنیم
+        for (let j = i + 1; j < lines.length; j++) {
+          const nextLine = lines[j];
 
-      // ۲. حالا بررسی می‌کنیم آیا این خط شامل زمان خاموشی است یا نه
-      const timeMatch = line.match(/(\d{2}:\d{2}\s*تا\s*\d{2}:\d{2})/);
+          // آیا خط بعدی، نام یک روستای دیگر است؟
+          const isNextLineAnotherArea = targetAreas.some(area => nextLine.includes(area.searchKeyword));
+          if (isNextLineAnotherArea) {
+            // اگر بله، یعنی بخش مربوط به روستای فعلی تمام شده. حلقه را بشکن.
+            break;
+          }
 
-      // ۳. اگر زمان پیدا شد و یک روستای فعلی در حافظه داشتیم...
-      if (timeMatch && currentArea) {
-        const timeStr = timeMatch[1].trim();
-        // ...زمان را به لیست زمان‌های همان روستای فعلی اضافه می‌کنیم
-        if (!currentArea.times.includes(timeStr)) {
-          currentArea.times.push(timeStr);
+          // آیا خط بعدی شامل زمان خاموشی است؟
+          const timeMatch = nextLine.match(/(\d{2}:\d{2}\s*تا\s*\d{2}:\d{2})/);
+          if (timeMatch && timeMatch[1]) {
+            // اگر بله، آن را به روستای فعلی (areaInThisLine) اضافه کن.
+            const timeStr = timeMatch[1].trim();
+            if (!areaInThisLine.times.includes(timeStr)) {
+              areaInThisLine.times.push(timeStr);
+            }
+          }
         }
       }
     });
