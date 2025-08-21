@@ -20,11 +20,9 @@ async function checkPowerOutage() {
     const page = await browser.newPage();
     
     console.log(`در حال رفتن به صفحه: ${SPLUS_URL}`);
-    // *** تغییر کلیدی اول: استفاده از networkidle2 ***
     await page.goto(SPLUS_URL, { waitUntil: "networkidle2", timeout: 90000 });
     
-    console.log("صفحه بارگذاری شد. در حال انتظار برای ظاهر شدن پیام‌ها...");
-    // *** تغییر کلیدی دوم: منتظر ماندن برای سلکتور پیام‌ها ***
+    console.log("در حال انتظار برای ظاهر شدن پیام‌ها...");
     await page.waitForSelector('div.channel-message-text', { timeout: 30000 });
     
     console.log("پیام‌ها ظاهر شدند. در حال استخراج محتوای HTML...");
@@ -34,7 +32,6 @@ async function checkPowerOutage() {
     const messagesNodeList = dom.window.document.querySelectorAll('div.channel-message-text');
 
     if (messagesNodeList.length === 0) {
-      // این بخش دیگر نباید اجرا شود
       return "خطای غیرمنتظره: پیام‌ها پس از انتظار یافت نشدند.";
     }
 
@@ -70,19 +67,29 @@ async function checkPowerOutage() {
       { searchKeyword: "زیرک آباد", customName: "زیرک آباد", times: [] },
     ];
     const lines = latestAnnouncementContent.split('\n').map(line => line.trim()).filter(line => line);
-    lines.forEach((line, i) => {
-        targetAreas.forEach(area => {
-            if (line.includes(area.searchKeyword)) {
-                for (let j = i + 1; j < i + 5 && j < lines.length; j++) {
-                    const timeMatch = lines[j].match(/(\d{2}:\d{2}\s*تا\s*\d{2}:\d{2})/);
-                    if (timeMatch && timeMatch[1]) {
-                        const timeStr = timeMatch[1].trim();
-                        if (!area.times.includes(timeStr)) area.times.push(timeStr);
-                        break;
-                    }
-                }
-            }
-        });
+    
+    // *** بخش کلیدی و بازنویسی شده منطق ***
+    let currentArea = null; // متغیر برای نگهداری روستای فعلی
+
+    lines.forEach(line => {
+      // ۱. بررسی می‌کنیم آیا این خط مربوط به یک روستای جدید است یا نه
+      const foundArea = targetAreas.find(area => line.includes(area.searchKeyword));
+      if (foundArea) {
+        // اگر اسم روستا پیدا شد، آن را به عنوان روستای فعلی انتخاب می‌کنیم
+        currentArea = foundArea;
+      }
+
+      // ۲. حالا بررسی می‌کنیم آیا این خط شامل زمان خاموشی است یا نه
+      const timeMatch = line.match(/(\d{2}:\d{2}\s*تا\s*\d{2}:\d{2})/);
+
+      // ۳. اگر زمان پیدا شد و یک روستای فعلی در حافظه داشتیم...
+      if (timeMatch && currentArea) {
+        const timeStr = timeMatch[1].trim();
+        // ...زمان را به لیست زمان‌های همان روستای فعلی اضافه می‌کنیم
+        if (!currentArea.times.includes(timeStr)) {
+          currentArea.times.push(timeStr);
+        }
+      }
     });
 
     const newHeader = `💡 گزارش برنامه خاموشی برای تاریخ: ${finalDate} 💡`;
