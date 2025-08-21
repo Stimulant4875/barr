@@ -45,7 +45,7 @@ async function checkPowerOutage() {
         const currentText = msg.textContent.trim();
         if (startPostRegex.test(currentText)) {
             latestAnnouncementStartIndex = i;
-            finalDate = currentText.match(startPostRegex)[1];
+            finalDate = currentText.match(startPostRegex);
             break;
         }
     }
@@ -73,24 +73,18 @@ async function checkPowerOutage() {
 
     const lines = latestAnnouncementContent.split('\n').map(line => line.trim()).filter(line => line);
     
-    // *** منطق نهایی و بسیار سخت‌گیرانه ***
     lines.forEach((line, i) => {
       const areaInThisLine = targetAreas.find(area => line.includes(area.searchKeyword));
 
       if (areaInThisLine) {
-        // اگر خط فعلی مربوط به یکی از گروه‌های ما بود، خطوط بعدی را بررسی کن
         for (let j = i + 1; j < lines.length; j++) {
           const nextLine = lines[j];
-
-          // **شرط توقف کلیدی:** اگر خط بعدی شامل ":" بود، یعنی یک عنوان جدید است و بخش ما تمام شده.
           if (nextLine.includes(':')) {
             break;
           }
-
-          // اگر عنوان جدید نبود، به دنبال زمان بگرد
           const timeMatch = nextLine.match(/(\d{2}:\d{2}\s*تا\s*\d{2}:\d{2})/);
-          if (timeMatch && timeMatch[1]) {
-            const timeStr = timeMatch[1].trim();
+          if (timeMatch && timeMatch) {
+            const timeStr = timeMatch.trim();
             if (!areaInThisLine.times.includes(timeStr)) {
               areaInThisLine.times.push(timeStr);
             }
@@ -134,7 +128,7 @@ async function checkPowerOutage() {
   }
 }
 
-// --- اجرای اصلی برنامه (بدون تغییر) ---
+// --- اجرای اصلی برنامه ---
 async function main() {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
     console.error("خطا: توکن ربات یا آیدی چت تعریف نشده است!");
@@ -145,7 +139,10 @@ async function main() {
   console.log("\n✅ --- پیام نهایی آماده شد --- ✅\n");
   console.log(message);
   
-  const telegramApiUrl = `https.api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+  // *** خط اصلاح شده ***
+  // آدرس کامل و صحیح داخل بک‌تیک (`) قرار داده شد
+  const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+  
   try {
     console.log("\n🚀 در حال ارسال پیام به تلگرام...");
     await axios.post(telegramApiUrl, { 
