@@ -1,0 +1,48 @@
+name: Check Power Outage Report
+
+on:
+  # این خط به شما اجازه می‌دهد تا به صورت دستی هم آن را اجرا کنید
+  workflow_dispatch:
+  
+  # اجرای زمان‌بندی شده با استفاده از cron
+  schedule:
+    # ----------------------------------------------------
+    # زمان‌ها به وقت جهانی (UTC) هستند. (ایران = UTC + 3:30)
+    # ----------------------------------------------------
+
+    # اجرا در ساعت 00:30 UTC  (معادل 4:00 صبح به وقت ایران)
+    - cron: '30 0 * * *'
+
+    # اجرا در ساعت 03:30 UTC  (معادل 7:00 صبح به وقت ایران)
+    - cron: '30 3 * * *'
+    
+    # اجرا در ساعت 11:30 UTC  (معادل 15:00 یا 3 بعد از ظهر به وقت ایران - تستی)
+    - cron: '30 11 * * *'
+    
+    # اجرا در ساعت 19:30 UTC  (معادل 23:00 یا 11 شب به وقت ایران)
+    - cron: '30 19 * * *'
+
+    # اجرا در ساعت 20:30 UTC  (معادل 24:00 یا نیمه‌شب به وقت ایران)
+    - cron: '30 20 * * *'
+
+jobs:
+  scrape-and-notify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run the script
+        run: node index.js
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
