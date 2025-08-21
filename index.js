@@ -6,10 +6,11 @@ import axios from 'axios';
 const SPLUS_URL = "https://splus.ir/Tozie_Barq_Nikshahar_ir";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const MAX_TELEGRAM_MESSAGE_LENGTH = 4096;
 
-// --- تابع اصلی وب‌گردی ---
-async function checkPowerOutage() {
-  console.log("شروع فرآیند وب‌گردی با منطق نهایی...");
+// --- تابع اصلی (فقط برای استخراج متن خام اطلاعیه) ---
+async function getRawAnnouncementText() {
+  console.log("شروع فرآیند وب‌گردی برای دریافت متن خام اطلاعیه...");
   
   let browser;
   try {
@@ -32,131 +33,89 @@ async function checkPowerOutage() {
     const messagesNodeList = dom.window.document.querySelectorAll('div.channel-message-text');
 
     if (messagesNodeList.length === 0) {
-      return "خطای غیرمنتظره: هیچ پیامی در صفحه پیدا نشد.";
+      return "خطا: هیچ پیامی در صفحه پیدا نشد.";
     }
 
     const messages = Array.from(messagesNodeList).reverse();
-    const announcementPosts = []; // آرایه‌ای برای نگهداری تمام پست‌های مربوط به یک اطلاعیه
-    let finalDate = "";
+    let latestAnnouncementContent = "";
     let foundStartOfAnnouncement = false;
     const startPostRegex = /برنامه خاموشی.*(\d{4}\/\d{2}\/\d{2})/;
 
-    // ۱. پیدا کردن بلوک کامل آخرین اطلاعیه
+    // پیدا کردن بلوک کامل متن اطلاعیه، حتی اگر در چند پست باشد
     for (const msg of messages) {
         msg.innerHTML = msg.innerHTML.replace(/<br\s*\/?>/gi, '\n');
         const currentText = msg.textContent.trim();
-        
         if (startPostRegex.test(currentText)) {
-            if (!foundStartOfAnnouncement) {
-                // این اولین پست شروع است که از آخر پیدا کردیم (پس جدیدترین است)
-                finalDate = currentText.match(startPostRegex)[1];
-                announcementPosts.push(currentText);
-                foundStartOfAnnouncement = true;
-            } else {
-                // به پست شروع اطلاعیه قدیمی‌تر رسیدیم، پس کار تمام است
-                break;
+            // این جدیدترین پست شروع است
+            latestAnnouncementContent = currentText;
+            // حالا پست‌های بعدی (که در واقع ادامه همین اطلاعیه هستند) را به آن اضافه می‌کنیم
+            let nextMsgIndex = messages.indexOf(msg) + 1;
+            while (nextMsgIndex < messages.length && !startPostRegex.test(messages[nextMsgIndex].textContent.trim())) {
+                messages[nextMsgIndex].innerHTML = messages[nextMsgIndex].innerHTML.replace(/<br\s*\/?>/gi, '\n');
+                latestAnnouncementContent += "\n\n" + messages[nextMsgIndex].textContent.trim();
+                nextMsgIndex++;
             }
-        } else if (foundStartOfAnnouncement) {
-            // این یک پست ادامه دهنده است، آن را به ابتدای لیست اضافه می‌کنیم
-            announcementPosts.unshift(currentText);
+            foundStartOfAnnouncement = true;
+            break; // چون جدیدترین اطلاعیه را پیدا کردیم، از حلقه خارج می‌شویم
         }
     }
-    
-    // محتوای کامل اطلاعیه را با چسباندن پست‌ها به هم می‌سازیم
-    const latestAnnouncementContent = announcementPosts.join("\n\n");
 
     if (!foundStartOfAnnouncement) {
-      return "پیام‌های کانال خوانده شد، اما هیچ پست اطلاعیه خاموشی جدیدی پیدا نشد.";
+      return "اطلاعیه خاموشی پیدا نشد. (ممکن است امروز اطلاعیه‌ای نباشد)";
     }
-
-    const targetAreas = [
-      { searchKeyword: "خیرآباد", customName: "کهورکان", times: [] },
-      { searchKeyword: "زیرک آباد", customName: "زیرک آباد", times: [] },
-    ];
-    targetAreas.forEach(area => area.times = []); // خالی کردن لیست‌ها قبل از هر اجرا
-
-    const lines = latestAnnouncementContent.split('\n').map(line => line.trim()).filter(line => line);
     
-    // ۲. منطق جدید و هوشمند برای تحلیل متن
-    let currentArea = null; // متغیر برای نگهداری روستایی که در حال پردازش آن هستیم
-
-    lines.forEach(line => {
-      // آیا این خط، نام یکی از روستاهای ماست؟
-      const foundArea = targetAreas.find(area => line.includes(area.searchKeyword));
-      
-      if (foundArea) {
-        // اگر بله، روستای فعلی را آپدیت می‌کنیم
-        currentArea = foundArea;
-      }
-
-      // آیا این خط شامل زمان خاموشی است؟
-      const timeMatch = line.match(/(\d{2}:\d{2}\s*تا\s*\d{2}:\d{2})/);
-      
-      // اگر زمان پیدا شد و یک روستای فعلی در حافظه داشتیم
-      if (timeMatch && currentArea) {
-        const timeStr = timeMatch[1].trim();
-        // زمان را به لیست همان روستای فعلی اضافه می‌کنیم
-        if (!currentArea.times.includes(timeStr)) {
-          currentArea.times.push(timeStr);
-        }
-      }
-      // اگر خط نه نام روستا بود و نه زمان، به سادگی نادیده گرفته می‌شود
-    });
-
-    // ۳. ساخت پیام نهایی (بدون تغییر)
-    const newHeader = `💡 گزارش برنامه خاموشی برای تاریخ: ${finalDate} 💡`;
-    let messageBody = "";
-    let foundAnyResults = false;
-    const turnLabels = ["نوبت اول", "نوبت دوم", "نوبت سوم", "نوبت چهارم", "نوبت پنجم"];
-    targetAreas.forEach(area => {
-        if (area.times.length > 0) {
-            foundAnyResults = true;
-            messageBody += `\n📍 روستای ${area.customName}:\n`;
-            const sortedTimes = area.times.sort();
-            sortedTimes.forEach((time, index) => {
-                const label = turnLabels[index] || `نوبت ${index + 1}`;
-                messageBody += `${label}: از ساعت ${time.replace("تا", "تا ساعت")}\n`;
-            });
-        }
-    });
-
-    let finalMessage = newHeader + "\n";
-    if (foundAnyResults) {
-      finalMessage += messageBody;
-    } else {
-      const areaNames = targetAreas.map(a => `"${a.customName}"`).join(' و ');
-      finalMessage += `\nبرای مناطق مشخص شده شما (${areaNames})، برنامه‌ای یافت نشد.`;
-    }
-    return finalMessage.trim();
+    // ارسال متن کامل و دست‌نخورده
+    return latestAnnouncementContent;
 
   } catch (error) {
     console.error("خطا در فرآیند وب‌گردی:", error);
-    return "متاسفانه در دریافت اطلاعات مشکلی پیش آمد. جزئیات خطا در لاگ GitHub Actions ثبت شد.";
+    return `متاسفانه در دریافت اطلاعات مشکلی پیش آمد: ${error.message}`;
   } finally {
     if (browser) await browser.close();
     console.log("فرآیند وب‌گردی تمام شد.");
   }
 }
 
-// --- اجرای اصلی برنامه (بدون تغییر) ---
+// --- اجرای اصلی برنامه (با قابلیت تقسیم پیام‌های طولانی) ---
 async function main() {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-    console.error("خطا: توکن ربات یا آیدی چت در سکرت‌های گیت‌האב تعریف نشده است!");
+    console.error("خطا: توکن ربات یا آیدی چت تعریف نشده است!");
     process.exit(1);
   }
 
-  const message = await checkPowerOutage();
-  console.log("\n✅ --- پیام نهایی آماده شد --- ✅\n");
-  console.log(message);
+  const fullMessage = await getRawAnnouncementText();
+  console.log("\n✅ --- متن خام اطلاعیه آماده شد --- ✅\n");
+  
+  // برای جلوگیری از چاپ متن طولانی در لاگ، فقط بخش کوچکی از آن را نمایش می‌دهیم
+  console.log(fullMessage.substring(0, 500) + "...");
+  
+  // بخش تقسیم پیام به قطعات کوچکتر
+  const messageChunks = [];
+  if (fullMessage.length > 0) {
+      for (let i = 0; i < fullMessage.length; i += MAX_TELEGRAM_MESSAGE_LENGTH) {
+        messageChunks.push(fullMessage.substring(i, i + MAX_TELEGRAM_MESSAGE_LENGTH));
+      }
+  } else {
+      messageChunks.push("متنی برای ارسال یافت نشد.");
+  }
+
   
   const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
   try {
-    console.log("\n🚀 در حال ارسال پیام به تلگرام...");
-    await axios.post(telegramApiUrl, { 
-      chat_id: TELEGRAM_CHAT_ID, 
-      text: message 
-    }, { timeout: 10000 });
-    console.log("✅ پیام با موفقیت به تلگرام ارسال شد.");
+    console.log(`\n🚀 پیام به ${messageChunks.length} بخش تقسیم شد. در حال ارسال...`);
+    
+    // ارسال هر قطعه به صورت جداگانه
+    for (const chunk of messageChunks) {
+      await axios.post(telegramApiUrl, { 
+        chat_id: TELEGRAM_CHAT_ID, 
+        text: chunk 
+      }, { timeout: 10000 });
+      console.log("یک بخش با موفقیت ارسال شد.");
+      // تاخیر کوچک برای جلوگیری از مشکلات احتمالی در ارسال پشت سر هم
+      await new Promise(resolve => setTimeout(resolve, 500)); 
+    }
+
+    console.log("✅ تمام بخش‌های پیام با موفقیت به تلگرام ارسال شد.");
   } catch (error) {
     console.error("❌ خطا در ارسال پیام به تلگرام:", error.response?.data || error.message);
     process.exit(1);
