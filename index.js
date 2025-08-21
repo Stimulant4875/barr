@@ -7,9 +7,9 @@ const SPLUS_URL = "https://splus.ir/Tozie_Barq_Nikshahar_ir";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-// --- تابع اصلی وب‌گردی و تحلیل ---
+// --- تابع اصلی ---
 async function checkPowerOutage() {
-  console.log("شروع فرآیند وب‌گردی با منطق نهایی و فیلترهای صحیح...");
+  console.log("شروع فرآیند وب‌گردی با منطق نهایی فیلترها...");
   
   let browser;
   try {
@@ -25,26 +25,24 @@ async function checkPowerOutage() {
     console.log("در حال انتظار برای ظاهر شدن پیام‌ها...");
     await page.waitForSelector('div.channel-message-text', { timeout: 30000 });
     
-    console.log("پیام‌ها ظاهر شدند.");
-    const allMessages = await page.$$eval('div.channel-message-text', nodes => 
-      nodes.map(n => {
-        // جایگزینی <br> با خط جدید برای حفظ ساختار متن
-        n.innerHTML = n.innerHTML.replace(/<br\s*\/?>/gi, '\n');
-        return n.textContent.trim();
-      })
-    );
+    console.log("پیام‌ها ظاهر شدند. در حال استخراج محتوای HTML...");
+    const htmlContent = await page.content();
+    
+    const dom = new JSDOM(htmlContent);
+    const allMessages = Array.from(dom.window.document.querySelectorAll('div.channel-message-text'));
 
     if (allMessages.length === 0) {
       return "خطای غیرمنتظره: هیچ پیامی در صفحه پیدا نشد.";
     }
 
-    // --- ۱. پیدا کردن بلوک کامل آخرین اطلاعیه (بر اساس منطق صحیح شما) ---
     const startPostRegex = /برنامه خاموشی.*(\d{4}\/\d{2}\/\d{2})/;
     let latestAnnouncementStartIndex = -1;
     let finalDate = "";
 
     for (let i = allMessages.length - 1; i >= 0; i--) {
-        const currentText = allMessages[i];
+        const msg = allMessages[i];
+        msg.innerHTML = msg.innerHTML.replace(/<br\s*\/?>/gi, '\n');
+        const currentText = msg.textContent.trim();
         if (startPostRegex.test(currentText)) {
             latestAnnouncementStartIndex = i;
             finalDate = currentText.match(startPostRegex)[1];
@@ -58,7 +56,7 @@ async function checkPowerOutage() {
 
     const announcementPosts = [];
     for (let i = latestAnnouncementStartIndex; i < allMessages.length; i++) {
-        const currentText = allMessages[i];
+        const currentText = allMessages[i].textContent.trim();
         if (i > latestAnnouncementStartIndex && startPostRegex.test(currentText)) {
             break;
         }
@@ -66,8 +64,8 @@ async function checkPowerOutage() {
     }
     const latestAnnouncementContent = announcementPosts.join("\n\n");
 
-    // --- ۲. تحلیل متن خام و فیلتر کردن اطلاعات با منطق نهایی ---
-    console.log("اطلاعیه خام پیدا شد. در حال تحلیل با منطق نهایی...");
+    // --- منطق جدید و دقیق برای تحلیل متن بر اساس مثال‌های شما ---
+    console.log("اطلاعیه خام پیدا شد. در حال تحلیل و فیلتر کردن...");
     const targetAreas = [
       { searchKeyword: "خیرآباد", customName: "کهورکان", times: [] },
       { searchKeyword: "زیرک آباد", customName: "زیرک آباد", times: [] },
@@ -77,22 +75,26 @@ async function checkPowerOutage() {
     const lines = latestAnnouncementContent.split('\n').map(line => line.trim()).filter(line => line);
     
     lines.forEach((line, i) => {
-      // آیا این خط، تعریف یکی از گروه‌های ماست؟
+      // ۱. بررسی می‌کنیم آیا خط فعلی، تعریف یکی از گروه‌های ماست؟
       const areaInThisLine = targetAreas.find(area => line.includes(area.searchKeyword));
 
       if (areaInThisLine) {
-        // اگر بود، شروع به خواندن خطوط بعدی می‌کنیم
-        for (let j = i + 1; j < lines.length; j++) {
+        // ۲. اگر بود، شروع به خواندن خطوط بعدی می‌کنیم
+        // ما یک محدوده جستجو (مثلاً ۱۰ خط بعدی) در نظر می‌گیریم
+        for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
           const nextLine = lines[j];
 
-          // **شرط توقف کلیدی:** اگر خط بعدی شامل ":" بود، یعنی یک عنوان جدید است و بخش ما تمام شده.
-          if (nextLine.includes(':')) {
-            break;
+          // ۳. آیا خط بعدی، تعریف یک گروه دیگر است؟
+          // اگر بله، یعنی بخش مربوط به گروه فعلی تمام شده است.
+          const isNextLineAnotherArea = targetAreas.some(area => nextLine.includes(area.searchKeyword));
+          if (isNextLineAnotherArea) {
+            break; // جستجو برای این گروه را متوقف کن
           }
 
-          // اگر عنوان جدید نبود، به دنبال زمان خاموشی بگرد
+          // ۴. آیا خط بعدی شامل زمان خاموشی است؟
           const timeMatch = nextLine.match(/(\d{2}:\d{2}\s*تا\s*\d{2}:\d{2})/);
           if (timeMatch && timeMatch[1]) {
+            // اگر بله، آن را به گروهی که در خط اصلی پیدا کردیم اضافه کن.
             const timeStr = timeMatch[1].trim();
             if (!areaInThisLine.times.includes(timeStr)) {
               areaInThisLine.times.push(timeStr);
@@ -102,7 +104,7 @@ async function checkPowerOutage() {
       }
     });
 
-    // --- ۳. ساخت پیام نهایی و تمیز ---
+    // --- ساخت پیام نهایی (بدون تغییر) ---
     const newHeader = `💡 گزارش برنامه خاموشی برای تاریخ: ${finalDate} 💡`;
     let messageBody = "";
     let foundAnyResults = false;
