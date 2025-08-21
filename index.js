@@ -9,7 +9,7 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 // --- تابع اصلی ---
 async function checkPowerOutage() {
-  console.log("شروع فرآیند وب‌گردی با منطق نهایی فیلترها...");
+  console.log("شروع فرآیند وب‌گردی با منطق نهایی و بسیار دقیق...");
   
   let browser;
   try {
@@ -64,8 +64,7 @@ async function checkPowerOutage() {
     }
     const latestAnnouncementContent = announcementPosts.join("\n\n");
 
-    // --- منطق جدید و دقیق برای تحلیل متن بر اساس مثال‌های شما ---
-    console.log("اطلاعیه خام پیدا شد. در حال تحلیل و فیلتر کردن...");
+    console.log("اطلاعیه خام پیدا شد. در حال تحلیل با منطق نهایی...");
     const targetAreas = [
       { searchKeyword: "خیرآباد", customName: "کهورکان", times: [] },
       { searchKeyword: "زیرک آباد", customName: "زیرک آباد", times: [] },
@@ -74,27 +73,23 @@ async function checkPowerOutage() {
 
     const lines = latestAnnouncementContent.split('\n').map(line => line.trim()).filter(line => line);
     
+    // *** منطق نهایی و بسیار سخت‌گیرانه ***
     lines.forEach((line, i) => {
-      // ۱. بررسی می‌کنیم آیا خط فعلی، تعریف یکی از گروه‌های ماست؟
       const areaInThisLine = targetAreas.find(area => line.includes(area.searchKeyword));
 
       if (areaInThisLine) {
-        // ۲. اگر بود، شروع به خواندن خطوط بعدی می‌کنیم
-        // ما یک محدوده جستجو (مثلاً ۱۰ خط بعدی) در نظر می‌گیریم
-        for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
+        // اگر خط فعلی مربوط به یکی از گروه‌های ما بود، خطوط بعدی را بررسی کن
+        for (let j = i + 1; j < lines.length; j++) {
           const nextLine = lines[j];
 
-          // ۳. آیا خط بعدی، تعریف یک گروه دیگر است؟
-          // اگر بله، یعنی بخش مربوط به گروه فعلی تمام شده است.
-          const isNextLineAnotherArea = targetAreas.some(area => nextLine.includes(area.searchKeyword));
-          if (isNextLineAnotherArea) {
-            break; // جستجو برای این گروه را متوقف کن
+          // **شرط توقف کلیدی:** اگر خط بعدی شامل ":" بود، یعنی یک عنوان جدید است و بخش ما تمام شده.
+          if (nextLine.includes(':')) {
+            break;
           }
 
-          // ۴. آیا خط بعدی شامل زمان خاموشی است؟
+          // اگر عنوان جدید نبود، به دنبال زمان بگرد
           const timeMatch = nextLine.match(/(\d{2}:\d{2}\s*تا\s*\d{2}:\d{2})/);
           if (timeMatch && timeMatch[1]) {
-            // اگر بله، آن را به گروهی که در خط اصلی پیدا کردیم اضافه کن.
             const timeStr = timeMatch[1].trim();
             if (!areaInThisLine.times.includes(timeStr)) {
               areaInThisLine.times.push(timeStr);
@@ -150,7 +145,7 @@ async function main() {
   console.log("\n✅ --- پیام نهایی آماده شد --- ✅\n");
   console.log(message);
   
-  const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+  const telegramApiUrl = `https.api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
   try {
     console.log("\n🚀 در حال ارسال پیام به تلگرام...");
     await axios.post(telegramApiUrl, { 
