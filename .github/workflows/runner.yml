@@ -25,19 +25,35 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # مرحله ۱: دریافت کد از ریپازیتوری
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # مرحله ۲: نصب Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
+      # مرحله ۳: نصب کتابخانه‌های پروژه
       - name: Install dependencies
         run: npm install
 
+      # مرحله ۴: اجرای اسکریپت اصلی
       - name: Run the script
         run: node index.js
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      # مرحله ۵: آپلود فایل‌های دیباگ (در صورت وجود)
+      # این مرحله همیشه اجرا می‌شود تا اگر فایلی ساخته شده بود، آن را آپلود کند
+      - name: Upload debug files if they exist
+        uses: actions/upload-artifact@v4
+        with:
+          # نام فایلی که در بخش Artifacts نمایش داده می‌شود
+          name: debug-files
+          # مسیری که باید آپلود شود
+          path: ./debug/
+          # اگر هیچ فایلی در این مسیر پیدا نشد، خطا نده و ادامه بده
+          if-no-files-found: ignore
