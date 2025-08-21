@@ -9,7 +9,7 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 // --- تابع اصلی ---
 async function checkPowerOutage() {
-  console.log("شروع فرآیند وب‌گردی با منطق نهایی و بسیار دقیق...");
+  console.log("شروع فرآیند وب‌گردی با منطق نهایی و اصلاح شده...");
   
   let browser;
   try {
@@ -45,7 +45,9 @@ async function checkPowerOutage() {
         const currentText = msg.textContent.trim();
         if (startPostRegex.test(currentText)) {
             latestAnnouncementStartIndex = i;
-            finalDate = currentText.match(startPostRegex);
+            // *** اصلاحیه ۱: استخراج صحیح تاریخ ***
+            // ما فقط گروه اول (خود تاریخ) را از نتیجه match استخراج می‌کنیم
+            finalDate = currentText.match(startPostRegex)[1];
             break;
         }
     }
@@ -82,9 +84,10 @@ async function checkPowerOutage() {
           if (nextLine.includes(':')) {
             break;
           }
+          // *** اصلاحیه ۲: استخراج صحیح زمان خاموشی ***
           const timeMatch = nextLine.match(/(\d{2}:\d{2}\s*تا\s*\d{2}:\d{2})/);
-          if (timeMatch && timeMatch) {
-            const timeStr = timeMatch.trim();
+          if (timeMatch && timeMatch[1]) {
+            const timeStr = timeMatch[1].trim();
             if (!areaInThisLine.times.includes(timeStr)) {
               areaInThisLine.times.push(timeStr);
             }
@@ -139,10 +142,7 @@ async function main() {
   console.log("\n✅ --- پیام نهایی آماده شد --- ✅\n");
   console.log(message);
   
-  // *** خط اصلاح شده ***
-  // آدرس کامل و صحیح داخل بک‌تیک (`) قرار داده شد
   const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-  
   try {
     console.log("\n🚀 در حال ارسال پیام به تلگرام...");
     await axios.post(telegramApiUrl, { 
