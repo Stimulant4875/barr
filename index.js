@@ -1,31 +1,8 @@
-import express from 'express';
 import puppeteer from 'puppeteer';
 import { JSDOM } from 'jsdom';
-import TelegramBot from 'node-telegram-bot-api';
+import axios from 'axios';
 
-// --- تنظیمات اصلی ---
-// توکن ربات شما که به صورت مستقیم در کد قرار داده شده
-const botToken = "8346440120:AAGQMSu5W8hU8pFkQceXMc3mql3g5DCNqPU";
-const app = express();
-const PORT = process.env.PORT || 8080;
-
-// این آدرس عمومی برنامه شما پس از استقرار در Fly.io خواهد بود
-// بعداً آن را با آدرس واقعی جایگزین خواهیم کرد
-const WEBHOOK_URL = process.env.FLY_APP_URL || `https://your-app-name.fly.dev`;
-
-// ربات را در حالت webhook اجرا می‌کنیم
-const bot = new TelegramBot(botToken);
-bot.setWebHook(`${WEBHOOK_URL}/bot${botToken}`);
-
-app.use(express.json());
-
-// این مسیر برای دریافت پیام‌ها از تلگرام است
-app.post(`/bot${botToken}`, (req, res) => {
-  bot.processUpdate(req.body);
-  res.sendStatus(200);
-});
-
-// --- تابع اصلی وب‌گردی (همان کد قدرتمند قبلی) ---
+// --- تابع اصلی وب‌گردی (بهینه‌سازی شده) ---
 async function checkPowerOutage() {
   console.log("شروع فرآیند وب‌گردی...");
   const url = "https://splus.ir/Tozie_Barq_Nikshahar_ir";
@@ -38,24 +15,37 @@ async function checkPowerOutage() {
   try {
     browser = await puppeteer.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--single-process',
+        '--no-zygote'
+      ],
     });
     const page = await browser.newPage();
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 90000 });
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      if (['image', 'stylesheet', 'font'].includes(req.resourceType())) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 90000 });
     const htmlContent = await page.content();
     
     const dom = new JSDOM(htmlContent);
     const messagesNodeList = dom.window.document.querySelectorAll('div.channel-message-text');
-
     if (messagesNodeList.length === 0) return "هیچ پستی در کانال یافت نشد.";
     
-    // ... بقیه منطق کد شما برای استخراج اطلاعات ...
-    // این بخش بدون تغییر است
     const messages = Array.from(messagesNodeList).reverse();
     let latestAnnouncementContent = "";
     let finalDate = "";
     let foundStartOfAnnouncement = false;
     const startPostRegex = /برنامه خاموشی.*(\d{4}\/\d{2}\/\d{2})/;
+
     for (const msg of messages) {
         msg.innerHTML = msg.innerHTML.replace(/<br\s*\/?>/gi, '\n');
         const currentText = msg.textContent.trim();
@@ -73,6 +63,7 @@ async function checkPowerOutage() {
         }
     }
     if (!foundStartOfAnnouncement) return "هیچ اطلاعیه برنامه خاموشی جدیدی یافت نشد.";
+
     const lines = latestAnnouncementContent.split('\n').map(line => line.trim()).filter(line => line);
     lines.forEach((line, i) => {
         targetAreas.forEach(area => {
@@ -88,6 +79,7 @@ async function checkPowerOutage() {
             }
         });
     });
+
     const newHeader = `💡 گزارش برنامه خاموشی برای تاریخ: ${finalDate} 💡`;
     let messageBody = "";
     let foundAnyResults = false;
@@ -103,43 +95,48 @@ async function checkPowerOutage() {
             });
         }
     });
+
     let finalMessage = newHeader + "\n";
-    if (foundAnyResults) finalMessage += messageBody;
-    else {
-        const areaNames = targetAreas.map(a => `"${a.customName}"`).join(' و ');
-        finalMessage += `\nبرای مناطق مشخص شده شما (${areaNames})، برنامه‌ای یافت نشد.`;
+    if (foundAnyResults) {
+      finalMessage += messageBody;
+    } else {
+      const areaNames = targetAreas.map(a => `"${a.customName}"`).join(' و ');
+      finalMessage += `\nبرای مناطق مشخص شده شما (${areaNames})، برنامه‌ای یافت نشد.`;
     }
     return finalMessage.trim();
+
   } catch (error) {
     console.error("خطا در فرآیند وب‌گردی:", error);
-    return "متاسفانه در دریافت اطلاعات مشکلی پیش آمد. لطفاً لحظاتی دیگر دوباره تلاش کنید.";
+    return "متاسفانه در دریافت اطلاعات مشکلی پیش آمد. جزئیات خطا در لاگ GitHub Actions ثبت شد.";
   } finally {
     if (browser) await browser.close();
     console.log("فرآیند وب‌گردی تمام شد.");
   }
 }
 
-// --- منطق ربات تلگرام ---
-bot.onText(/\/start/, async (msg) => {
-  const chatId = msg.chat.id;
-  console.log(`درخواست /start از چت ${chatId} دریافت شد.`);
+// --- اجرای اصلی برنامه ---
+async function main() {
+  const message = await checkPowerOutage();
+  console.log("\n✅ --- پیام نهایی آماده شد --- ✅\n");
+  console.log(message);
   
-  // ۱. ارسال پیام اولیه به کاربر
-  await bot.sendMessage(chatId, "سلام! لطفاً چند لحظه صبر کنید، در حال بررسی آخرین وضعیت خاموشی برق هستم...");
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
 
-  try {
-    // ۲. اجرای تابع سنگین وب‌گردی
-    const resultMessage = await checkPowerOutage();
-    
-    // ۳. ارسال نتیجه نهایی به کاربر
-    await bot.sendMessage(chatId, resultMessage);
-  } catch (error) {
-    console.error("خطای کلی در ربات:", error);
-    await bot.sendMessage(chatId, "یک خطای پیش‌بینی نشده رخ داد. مدیر سرور در حال بررسی است.");
+  if (!botToken || !chatId) {
+    console.error("خطا: توکن ربات یا آیدی چت تعریف نشده است!");
+    process.exit(1);
   }
-});
 
-// --- راه‌اندازی سرور ---
-app.listen(PORT, () => {
-  console.log(`🚀 سرور شما روی پورت ${PORT} آماده دریافت پیام از تلگرام است.`);
-});
+  const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+  try {
+    console.log("\n🚀 در حال ارسال پیام به تلگرام...");
+    await axios.post(url, { chat_id: chatId, text: message }, { timeout: 10000 });
+    console.log("✅ پیام با موفقیت به تلگرام ارسال شد.");
+  } catch (error) {
+    console.error("❌ خطا در ارسال پیام به تلگرام:", error.response?.data || error.message);
+    process.exit(1);
+  }
+}
+
+main();
