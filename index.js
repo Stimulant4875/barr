@@ -2,69 +2,44 @@ import puppeteer from 'puppeteer';
 import { JSDOM } from 'jsdom';
 import axios from 'axios';
 
-// --- تنظیمات سراسری ---
+// --- تنظیمات سراسری (بدون تغییر) ---
 const SPLUS_URL = "https://splus.ir/Tozie_Barq_Nikshahar_ir";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const MAX_TELEGRAM_MESSAGE_LENGTH = 4096;
 
-// --- تابع اصلی دریافت اطلاعات (بدون تغییر) ---
+// --- تابع دریافت اطلاعات (بدون تغییر) ---
 async function getRawAnnouncementText() {
-  console.log("شروع فرآیند وب‌گردی با منطق اصلاح شده...");
-  
+  console.log("شروع فرآیند وب‌گردی...");
   let browser;
   try {
-    browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
+    browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
     const page = await browser.newPage();
-    
-    console.log(`در حال رفتن به صفحه: ${SPLUS_URL}`);
     await page.goto(SPLUS_URL, { waitUntil: "networkidle2", timeout: 90000 });
-    
-    console.log("در حال انتظار برای ظاهر شدن پیام‌ها...");
     await page.waitForSelector('div.channel-message-text', { timeout: 30000 });
-    
-    console.log("پیام‌ها ظاهر شدند. در حال استخراج محتوای HTML...");
     const htmlContent = await page.content();
-    
     const dom = new JSDOM(htmlContent);
     const allMessages = Array.from(dom.window.document.querySelectorAll('div.channel-message-text'));
-
-    if (allMessages.length === 0) {
-      return "خطا: هیچ پیامی در صفحه پیدا نشد.";
-    }
-
+    if (allMessages.length === 0) return "خطا: هیچ پیامی در صفحه پیدا نشد.";
     const startPostRegex = /برنامه خاموشی.*(\d{4}\/\d{2}\/\d{2})/;
     let latestAnnouncementStartIndex = -1;
-
     for (let i = allMessages.length - 1; i >= 0; i--) {
-        const msg = allMessages[i];
-        msg.innerHTML = msg.innerHTML.replace(/<br\s*\/?>/gi, '\n');
-        const currentText = msg.textContent.trim();
-        if (startPostRegex.test(currentText)) {
-            latestAnnouncementStartIndex = i;
-            break;
-        }
+      const msg = allMessages[i];
+      msg.innerHTML = msg.innerHTML.replace(/<br\s*\/?>/gi, '\n');
+      const currentText = msg.textContent.trim();
+      if (startPostRegex.test(currentText)) {
+        latestAnnouncementStartIndex = i;
+        break;
+      }
     }
-
-    if (latestAnnouncementStartIndex === -1) {
-      return "اطلاعیه خاموشی پیدا نشد. (ممکن است امروز اطلاعیه‌ای نباشد)";
-    }
-
+    if (latestAnnouncementStartIndex === -1) return "اطلاعیه خاموشی پیدا نشد.";
     const announcementPosts = [];
     for (let i = latestAnnouncementStartIndex; i < allMessages.length; i++) {
-        const currentText = allMessages[i].textContent.trim();
-        if (i > latestAnnouncementStartIndex && startPostRegex.test(currentText)) {
-            break;
-        }
-        announcementPosts.push(currentText);
+      const currentText = allMessages[i].textContent.trim();
+      if (i > latestAnnouncementStartIndex && startPostRegex.test(currentText)) break;
+      announcementPosts.push(currentText);
     }
-    
-    const latestAnnouncementContent = announcementPosts.join("\n\n");
-    return latestAnnouncementContent;
-
+    return announcementPosts.join("\n\n");
   } catch (error) {
     console.error("خطا در فرآیند وب‌گردی:", error);
     return `متاسفانه در دریافت اطلاعات مشکلی پیش آمد: ${error.message}`;
@@ -74,63 +49,67 @@ async function getRawAnnouncementText() {
   }
 }
 
+// *** تابع جدید برای فیلتر، گروه‌بندی و خلاصه‌سازی ***
+function processAndSummarizeAnnouncement(fullText) {
+  console.log("شروع فرآیند خلاصه‌سازی و مرتب‌سازی...");
 
-// *** تابع جدید برای فیلتر کردن متن اطلاعیه ***
-function filterAnnouncement(fullText) {
-  console.log("در حال فیلتر کردن متن اطلاعیه...");
-
-  // لیست کلمات کلیدی که باید در یک خط باشند تا آن خط انتخاب شود
-  // این کار باعث می‌شود که اگر فرمت کمی تغییر کرد، کد همچنان درست کار کند
-  const targetKeywords = [
-    // گروه اول: باید شامل "زیرک‌آباد" و "پوزک" باشد
-    ['زیرک‌آباد', 'پوزک'], 
-    // گروه دوم: باید شامل "خیرآباد" و "کشیگ" باشد
-    ['خیرآباد', 'کشیگ']   
+  // ۱. تعریف گروه‌های مورد نظر با یک نام دلخواه
+  const locationGroups = [
+    {
+      name: "📍 گروه ۱ (خیرآباد، کشیگ و...)",
+      keywords: ['خیرآباد', 'کشیگ']
+    },
+    {
+      name: "📍 گروه ۲ (زیرک‌آباد، پوزک و...)",
+      keywords: ['زیرک‌آباد', 'پوزک']
+    }
   ];
 
   const lines = fullText.split('\n').filter(line => line.trim() !== '');
-  if (lines.length < 2) {
-    return fullText; // اگر متن کوتاه یا غیرعادی بود، همان را برگردان
-  }
+  if (lines.length < 2) return fullText;
 
-  const filteredResult = [];
-  // خط اول که معمولا عنوان و تاریخ است را نگه می‌داریم
-  const title = lines[0];
-  filteredResult.push(title);
-  filteredResult.push('---'); // یک جداکننده برای خوانایی
+  const title = lines[0]; // عنوان اصلی اطلاعیه
+  const summary = {}; // آبجکتی برای نگهداری نتایج
 
-  let foundMatch = false;
-
+  // ۲. پیدا کردن زمان‌ها برای هر گروه
   for (let i = 1; i < lines.length; i++) {
     const currentLine = lines[i];
+    const timeLine = lines[i + 1]; // خط زمان، خط بعدی است
 
-    // بررسی می‌کنیم که آیا خط فعلی با یکی از گروه‌های کلمات کلیدی ما مطابقت دارد یا خیر
-    const isMatch = targetKeywords.some(group => 
-      group.every(keyword => currentLine.includes(keyword))
-    );
+    if (!timeLine) continue; // اگر خط بعدی وجود نداشت، ادامه بده
 
-    if (isMatch) {
-      foundMatch = true;
-      // خطی که مناطق را مشخص کرده اضافه کن
-      filteredResult.push(currentLine);
-      // خط بعدی که زمان را مشخص کرده هم اضافه کن
-      if (i + 1 < lines.length) {
-        filteredResult.push(lines[i + 1]);
-        filteredResult.push(''); // یک خط خالی برای جداسازی و خوانایی بهتر
+    for (const group of locationGroups) {
+      // اگر خط فعلی شامل تمام کلمات کلیدی یک گروه بود
+      if (group.keywords.every(keyword => currentLine.includes(keyword))) {
+        if (!summary[group.name]) {
+          summary[group.name] = []; // اگر گروه برای اولین بار پیدا شد، یک آرایه برایش بساز
+        }
+        summary[group.name].push(timeLine.trim()); // زمان را به آرایه آن گروه اضافه کن
+        break; // وقتی گروه پیدا شد، نیازی به چک کردن بقیه گروه‌ها برای این خط نیست
       }
     }
   }
 
-  // اگر هیچ موردی پیدا نشد، یک پیام مناسب برگردان
-  if (!foundMatch) {
+  // ۳. ساختن متن خروجی زیبا و خلاصه
+  if (Object.keys(summary).length === 0) {
     return `${title}\n---\nدر اطلاعیه امروز، خاموشی برای مناطق مورد نظر شما پیدا نشد.`;
   }
 
-  return filteredResult.join('\n');
+  let formattedMessage = `📢 **خلاصه برنامه خاموشی‌های احتمالی**\n${title}\n\n`;
+  for (const groupName in summary) {
+    formattedMessage += `${groupName}\n`;
+    formattedMessage += `⏰ **خاموشی در ساعت‌های:**\n`;
+    summary[groupName].forEach(time => {
+      formattedMessage += ` - ${time}\n`;
+    });
+    formattedMessage += `\n---\n`;
+  }
+  
+  return formattedMessage;
 }
 
 
-// --- اجرای اصلی برنامه (با تغییر کوچک برای اعمال فیلتر) ---
+// --- اجرای اصلی برنامه (با تغییر برای فراخوانی تابع جدید) ---
 async function main() {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
     console.error("خطا: توکن ربات یا آیدی چت تعریف نشده است!");
@@ -140,39 +119,4 @@ async function main() {
   const rawMessage = await getRawAnnouncementText();
   console.log("\n✅ --- متن خام اطلاعیه دریافت شد --- ✅\n");
   
-  // *** اینجا فیلتر را اعمال می‌کنیم ***
-  const filteredMessage = filterAnnouncement(rawMessage);
-  console.log("✅ --- متن فیلتر شده آماده ارسال --- ✅\n");
-  console.log(filteredMessage);
-
-  const messageChunks = [];
-  // *** به جای fullMessage از filteredMessage استفاده می‌کنیم ***
-  if (filteredMessage.length > 0) {
-      for (let i = 0; i < filteredMessage.length; i += MAX_TELEGRAM_MESSAGE_LENGTH) {
-        messageChunks.push(filteredMessage.substring(i, i + MAX_TELEGRAM_MESSAGE_LENGTH));
-      }
-  } else {
-      messageChunks.push("متنی برای ارسال یافت نشد.");
-  }
-  
-  const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-  try {
-    console.log(`\n🚀 پیام به ${messageChunks.length} بخش تقسیم شد. در حال ارسال...`);
-    
-    for (const chunk of messageChunks) {
-      await axios.post(telegramApiUrl, { 
-        chat_id: TELEGRAM_CHAT_ID, 
-        text: chunk 
-      }, { timeout: 10000 });
-      console.log("یک بخش با موفقیت ارسال شد.");
-      await new Promise(resolve => setTimeout(resolve, 500)); 
-    }
-
-    console.log("✅ تمام بخش‌های پیام با موفقیت به تلگرام ارسال شد.");
-  } catch (error) {
-    console.error("❌ خطا در ارسال پیام به تلگرام:", error.response?.data || error.message);
-    process.exit(1);
-  }
-}
-
-main();
+  // *** اینجا تابع جدید خلاصه‌سازی را فراخوانی می‌کنیم ***
