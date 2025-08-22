@@ -120,3 +120,34 @@ async function main() {
   console.log("\n✅ --- متن خام اطلاعیه دریافت شد --- ✅\n");
   
   // *** اینجا تابع جدید خلاصه‌سازی را فراخوانی می‌کنیم ***
+  const summarizedMessage = processAndSummarizeAnnouncement(rawMessage);
+  console.log("✅ --- متن خلاصه شده آماده ارسال --- ✅\n");
+  console.log(summarizedMessage);
+
+  const messageChunks = [];
+  // *** از summarizedMessage برای ارسال استفاده می‌کنیم ***
+  if (summarizedMessage.length > 0) {
+    for (let i = 0; i < summarizedMessage.length; i += MAX_TELEGRAM_MESSAGE_LENGTH) {
+      messageChunks.push(summarizedMessage.substring(i, i + MAX_TELEGRAM_MESSAGE_LENGTH));
+    }
+  } else {
+    messageChunks.push("متنی برای ارسال یافت نشد.");
+  }
+  
+  const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+  try {
+    console.log(`\n🚀 در حال ارسال پیام به تلگرام...`);
+    for (const chunk of messageChunks) {
+      await axios.post(telegramApiUrl, { 
+        chat_id: TELEGRAM_CHAT_ID, 
+        text: chunk,
+        parse_mode: 'Markdown' // *** این گزینه برای نمایش درست *bold* اضافه شد ***
+      }, { timeout: 10000 });
+    }
+    console.log("✅ پیام با موفقیت به تلگرام ارسال شد.");
+  } catch (error) {
+    console.error("❌ خطا در ارسال پیام به تلگرام:", error.response?.data || error.message);
+  }
+}
+
+main();
